@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>내 자산</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mu:#777;--bd:#e3e3e3;--up:229,72,77;--dn:59,130,246}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mu:#999;--bd:#333}}
+body{margin:0 auto;padding:12px;max-width:900px;font:14px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+h2{font-size:16px;margin:24px 0 8px}
+section,.box{border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:12px;overflow-x:auto}
+input,button{font:inherit;padding:6px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg)}
+button{cursor:pointer}table{border-collapse:collapse;width:100%}
+td,th{padding:4px 6px;border-bottom:1px solid var(--bd);text-align:right;white-space:nowrap}
+td:first-child,th:first-child{text-align:left}
+.big{font-size:26px;font-weight:700}.mu{color:var(--mu);font-size:12px}
+.cal{display:flex;flex-wrap:wrap;gap:3px}.cal i{width:16px;height:16px;border-radius:3px;background:var(--bd)}
+.hm td{padding:0;width:14px;height:14px;min-width:14px;border:1px solid var(--bg)}.hm td:first-child{padding:0 6px;width:auto}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.g label{display:block;font-size:12px;color:var(--mu)}.g input{width:100%;box-sizing:border-box}
+</style></head><body>
+<div id="lock" class="box"><b>비밀번호</b> <input id="pw" type="password" autocomplete="current-password"> <button onclick="unlock()">열기</button> <span id="err" class="mu"></span></div>
+<div id="app" hidden>
+<button onclick="S.hide=!S.hide;draw()">금액 숨기기/보이기</button>
+<div id="top"></div>
+<h2>순자산 추이</h2><section id="line"></section>
+<h2>일별 수익률 (단순 평가액 변화율)</h2><section><div id="cal" class="cal"></div><div class="mu">빨강 상승 · 파랑 하락 · 입출금과 신규 매수가 섞여 보일 수 있음</div></section>
+<h2>종목별 기여도 (최근 30일)</h2><section id="hm"></section>
+<h2>보유 종목</h2><section id="hold"></section>
+<h2>수동 입력 자산</h2><section id="man"></section>
+<h2>은퇴 플래너</h2><section id="ret"></section>
+<p class="mu">가정에 따른 단순 계산이며 투자 조언이 아닙니다.</p>
+</div>
+<script>
+const $=id=>document.getElementById(id),te=new TextEncoder(),ub=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0)),bu=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+let H=[],PW='',S={hide:0},M=JSON.parse(localStorage.getItem('man1')||'[]');
+let R=JSON.parse(localStorage.getItem('ret1')||'null')||{age:40,ret:60,life:90,exp:3000000,pen:1000000,sav:1000000,rp:5,rq:3,inf:2.5};
+async function K(salt,it){const k=await crypto.subtle.importKey('raw',te.encode(PW),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:it,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function dec(e){const k=await K(ub(e.salt),e.it);return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:ub(e.iv)},k,ub(e.ct))))}
+async function enc(o){const s=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),k=await K(s,600000);return{v:1,it:600000,salt:bu(s),iv:bu(iv),ct:bu(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,te.encode(JSON.stringify(o))))}}
+async function unlock(){PW=$('pw').value;try{H=await dec(await (await fetch('data/history.enc',{cache:'no-store'})).json());$('lock').hidden=true;$('app').hidden=false;draw()}catch(e){$('err').textContent='비밀번호가 틀렸거나 데이터가 없습니다'}}
+$('pw').addEventListener('keydown',e=>e.key=='Enter'&&unlock());
+const W=n=>S.hide?'●●●':Math.round(n).toLocaleString('ko-KR')+'원',P=x=>(x>=0?'+':'')+(x*100).toFixed(2)+'%',T=s=>s.i.reduce((a,x)=>a+x[5],0),C=x=>`rgba(var(--${x>=0?'up':'dn'}),${Math.min(1,Math.abs(x)/.03)})`;
+const manSum=()=>M.filter(m=>m.ret).reduce((a,m)=>a+m.amt,0),allMan=()=>M.reduce((a,m)=>a+m.amt,0);
+function draw(){const L=H[H.length-1],t=T(L),p=H.length>1?(t-T(H[H.length-2]))/T(H[H.length-2]):0;
+$('top').innerHTML=`<div class="box"><div class="mu">${L.d} 기준 · USD/KRW ${L.fx}</div><div class="big">${W(t+allMan())}</div><div class="mu">증권 ${W(t)} (전일 대비 ${P(p)}) · 수동 자산 ${W(allMan())}</div></div>`;
+const v=H.map(s=>T(s)+allMan()),mn=Math.min(...v),mx=Math.max(...v),w=800,h=160,pt=v.map((y,i)=>`${v.length>1?i*w/(v.length-1):w/2},${h-(mx==mn?h/2:(y-mn)/(mx-mn)*(h-10))-5}`).join(' ');
+$('line').innerHTML=`<svg viewBox="0 0 ${w} ${h}" width="100%"><polyline points="${pt}" fill="none" stroke="rgb(var(--dn))" stroke-width="2"/></svg><div class="mu">${H[0].d} ~ ${L.d} (${H.length}일)</div>`;
+$('cal').innerHTML=H.slice(1).map((s,i)=>{const a=T(H[i]),r=a?(T(s)-a)/a:0;return`<i title="${s.d} ${P(r)}" style="background:${C(r)}"></i>`}).join('');
+const D=H.slice(-31),sy=[...new Set(D.flatMap(s=>s.i.map(x=>x[1])))],val=(s,n)=>(s.i.find(x=>x[1]==n)||[0,0,0,0,0,0])[5];
+$('hm').innerHTML=D.length<2?'<span class="mu">데이터가 2일 이상 쌓이면 표시됩니다</span>':'<table class="hm">'+sy.map(n=>`<tr><td>${n}</td>`+D.slice(1).map((s,i)=>{const b=T(D[i]),c=b?(val(s,n)-val(D[i],n))/b:0;return`<td title="${s.d} ${P(c)}" style="background:${C(c)}"></td>`}).join('')+'</tr>').join('')+'</table>';
+$('hold').innerHTML='<table><tr><th>종목</th><th>수량</th><th>평가액</th><th>비중</th><th>손익률</th></tr>'+[...L.i].sort((a,b)=>b[5]-a[5]).map(x=>`<tr><td>${x[1]}</td><td>${S.hide?'●●●':x[3]}</td><td>${W(x[5])}</td><td>${(x[5]/t*100).toFixed(1)}%</td><td>${x[6]?P(x[5]/x[6]-1):'-'}</td></tr>`).join('')+'</table>';
+man();ret()}
+function man(){$('man').innerHTML='<table><tr><th>이름</th><th>금액</th><th>은퇴 자산 포함</th><th></th></tr>'+M.map((m,i)=>`<tr><td>${m.n}</td><td>${W(m.amt)}</td><td><input type="checkbox" ${m.ret?'checked':''} onchange="M[${i}].ret=this.checked;sv();draw()"></td><td><button onclick="M.splice(${i},1);sv();draw()">삭제</button></td></tr>`).join('')+`</table><p><input id="mn" placeholder="예: 예금"> <input id="ma" type="number" placeholder="금액(원)"> <button onclick="addM()">추가</button></p><p><button onclick="exp_()">암호화 파일 내보내기</button> <input type="file" id="imp" onchange="imp_(this)"></p><div class="mu">브라우저에만 저장됩니다. 기기를 옮길 때 내보내기/가져오기를 쓰세요.</div>`}
+const sv=()=>localStorage.setItem('man1',JSON.stringify(M));
+function addM(){const n=$('mn').value,a=+$('ma').value;if(n&&a){M.push({n,amt:a,ret:true});sv();draw()}}
+async function exp_(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(await enc({M,R}))]));a.download='settings.enc';a.click()}
+async function imp_(f){try{const o=await dec(JSON.parse(await f.files[0].text()));M=o.M;R=o.R;sv();localStorage.setItem('ret1',JSON.stringify(R));draw()}catch(e){alert('가져오기 실패: 비밀번호 또는 파일을 확인하세요')}}
+function plan(A,n,L,r){const inf=r.inf/100,rp=r.rp/100,g=(1+r.rq/100)/(1+inf)-1,net=Math.max(0,r.exp-r.pen)*12,f=Math.pow(1+inf,n);let pv=0;for(let t=0;t<L;t++)pv+=net/Math.pow(1+g,t);
+const m=rp/12,k=12*n,ann=m?(Math.pow(1+m,k)-1)/m:k,fv=A*Math.pow(1+rp,n)+r.sav*ann,n1=net*f/.04,n2=pv*f,ex=gap=>gap>0&&k>0?gap/ann:0;
+return{n1,n2,fv,g1:n1-fv,g2:n2-fv,e1:ex(n1-fv),e2:ex(n2-fv)}}
+function ret(){const lab={age:'현재 나이',ret:'은퇴 나이',life:'기대 수명',exp:'은퇴 후 월 생활비(현재가치)',pen:'월 연금 수령액(현재가치)',sav:'월 저축액',rp:'은퇴 전 수익률 %',rq:'은퇴 후 수익률 %',inf:'물가상승률 %'};
+$('ret').innerHTML='<div class="g">'+Object.keys(lab).map(k=>`<div><label>${lab[k]}</label><input type="number" step="any" value="${R[k]}" onchange="R.${k}=+this.value;localStorage.setItem('ret1',JSON.stringify(R));ret()"></div>`).join('')+'</div>';
+const A=T(H[H.length-1])+manSum(),n=R.ret-R.age,L=R.life-R.ret;if(n<=0||L<=0){$('ret').innerHTML+='<p>은퇴 나이는 현재보다 크고 기대 수명보다 작아야 합니다.</p>';return}
+const row=(d)=>{const p=plan(A,n+d,Math.max(1,L-d),R);return`<tr><td>${d?`은퇴 ${d}년 지연`:'계획대로'}</td><td>${W(p.n1)}</td><td>${W(p.n2)}</td><td>${W(p.fv)}</td><td>${W(p.g1)}</td><td>${W(p.g2)}</td><td>${W(p.e1)}</td><td>${W(p.e2)}</td></tr>`};
+$('ret').innerHTML+=`<p class="mu">은퇴 시점 명목 금액 기준. 연금은 은퇴 시점부터 수령한다고 가정, 은퇴 가능 자산 ${W(A)}</p><table><tr><th>시나리오</th><th>필요(4%룰)</th><th>필요(현금흐름)</th><th>예상 자산</th><th>부족(4%룰)</th><th>부족(현금흐름)</th><th>월 추가저축(4%룰)</th><th>월 추가저축(현금흐름)</th></tr>${[0,1,3,5].map(row).join('')}</table><div class="mu">부족액이 음수면 목표 초과 달성입니다.</div>`}
+</script></body></html>
